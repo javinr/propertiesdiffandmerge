@@ -9,6 +9,7 @@ import java.util.Properties;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.commons.lang3.tuple.Pair;
@@ -18,8 +19,11 @@ import org.apache.commons.lang3.tuple.Pair;
  *
  */
 public class PropertiesDiffAndMergeApp {
+	private static final Options options;
+	static {
+		options = createOptions();
+	}
 	public static void main(String[] args) {
-		Options options = new Options();
 		CommandLineParser parser = new DefaultParser();
 		try {
 			CommandLine commandLine = parser.parse(options, args);
@@ -70,6 +74,11 @@ public class PropertiesDiffAndMergeApp {
 		}
 	}
 
+	private static Options createOptions() {
+		Options options = new Options();
+		return options;
+	}
+
 	private static void showPairProperties(String title, Properties propertiesDifferent) {
 		System.out.println(title);
 		for (Object key : propertiesDifferent.keySet()) {
@@ -114,7 +123,8 @@ public class PropertiesDiffAndMergeApp {
 	}
 
 	private static void use() {
-		// TODO Auto-generated method stub
+		HelpFormatter helpFormatter = new HelpFormatter();
+		helpFormatter.printHelp("PropertiesDiffAndMergeApp file1 file2", options);
 		
 	}
 }
