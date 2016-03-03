@@ -1,11 +1,19 @@
 package es.javinr.propertiesdiffandmerge;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.lang.reflect.Array;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Properties;
+import java.util.Set;
+import java.util.function.Consumer;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
@@ -16,11 +24,33 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.commons.lang3.tuple.Pair;
 
+import es.javinr.propertiesdiffandmerge.PropertiesDiffAndMergeApp.Action;
+
 /**
  * Hello world!
  *
  */
 public class PropertiesDiffAndMergeApp {
+	public enum Action {
+		YES('y','Y'), NO('n','N'), EXCLUDE('e','E'), ORIGINAL('o','O'), MODIFIED('M','m');
+		private Set<Character> characters;
+		private Action(char... characters) {
+			this.characters = new HashSet<Character>();
+			for (char c : characters) {
+				this.characters.add(c);
+			}
+		}
+		public static Action fromChar(char c) {
+			for (Action action : Action.values()) {
+				if (action.characters.contains(c)) {
+					return action;
+				}
+			}
+			return null;
+		}
+
+	}
+
 	public boolean isOutputToFile() {
 		return outputToFile;
 	}
@@ -50,7 +80,16 @@ public class PropertiesDiffAndMergeApp {
 	private File outputFile;
 	private File originalFile;
 	private File modifiedFile;
+	private boolean interactive = false;
 	
+	public boolean isInteractive() {
+		return interactive;
+	}
+
+	public void setInteractive(boolean interactive) {
+		this.interactive = interactive;
+	}
+
 	static {
 		options = createOptions();
 	}
@@ -90,6 +129,8 @@ public class PropertiesDiffAndMergeApp {
 				app.setOutputToFile(true);
 				app.setOutputFile(new File(commandLine.getOptionValue('o')));
 			}
+			app.setInteractive(commandLine.hasOption('i'));
+			
 			System.out.println("Diffing " + originalFilePath + " and " + modifiedFile2Path);
 			app.run();
 		} catch (Exception e) {
@@ -97,24 +138,87 @@ public class PropertiesDiffAndMergeApp {
 		}
 	}
 	public void run() throws Exception {
-		Properties properties1 = loadFile(originalFile);
-		Properties properties2 = loadFile(modifiedFile);
+		Properties propertiesOriginal = loadFile(originalFile);
+		Properties propertiesModified = loadFile(modifiedFile);
 		
-		Properties propertiesIn1NotIn2 = diffPropertiesNotIn(properties1, properties2);
-		Properties propertiesIn2NotIn1 = diffPropertiesNotIn(properties2, properties1);
-		Properties propertiesDifferent = diffProperties(properties1, properties2);
-		showProperties("Properties in " + originalFile.getName() + " not in " + modifiedFile.getName() + ":", propertiesIn1NotIn2);
-		showProperties("Properties in " + modifiedFile.getName() + " not in " + originalFile.getName() + ":", propertiesIn2NotIn1);
+		Properties propertiesInOriginalNotInModified = diffPropertiesNotIn(propertiesOriginal, propertiesModified);
+		Properties propertiesInModifiedNotInOriginal = diffPropertiesNotIn(propertiesModified, propertiesOriginal);
+		Properties propertiesDifferent = diffProperties(propertiesOriginal, propertiesModified);
+		showProperties("Properties in " + originalFile.getName() + " not in " + modifiedFile.getName() + ":", propertiesInOriginalNotInModified);
+		showProperties("Properties in " + modifiedFile.getName() + " not in " + originalFile.getName() + ":", propertiesInModifiedNotInOriginal);
 		showPairProperties("Different properties:", propertiesDifferent);
 		if (outputToFile) {
 			Properties outputProperties = new Properties();
-			outputProperties.putAll(properties2);
+			if (interactive) {
+				interactiveOutputProperties(outputProperties, propertiesModified, propertiesInOriginalNotInModified, propertiesInModifiedNotInOriginal, propertiesDifferent);
+			} else {
+				outputProperties.putAll(propertiesModified);
+			}
 			try (FileWriter outputFileWriter = new FileWriter(getOutputFile())) {
 				outputProperties.store(outputFileWriter, null);
 			} catch (IOException e) {
 				throw new Exception("Error writing output file " + getOutputFile().getAbsolutePath(), e);
 			}
 		}
+	}
+
+	private void interactiveOutputProperties(Properties outputProperties, Properties modifiedProperties,
+			Properties propertiesInOriginalNotInModified, Properties propertiesInModifiedNotInOriginal, Properties propertiesDifferent) {
+		for (Object key : modifiedProperties.keySet()) {
+			Object value = modifiedProperties.get(key);
+			boolean include = true;
+			try {
+				if (propertiesInOriginalNotInModified.containsKey(key)) {
+					include = checkIncludeNotIn("modified", key, value);
+				} else if (propertiesInModifiedNotInOriginal.containsKey(key)) {
+					include = checkIncludeNotIn("original", key, value);
+				} else if (propertiesDifferent.containsKey(key)) {
+					Action action = checkDifferentAction(key, value, propertiesDifferent.get(key));
+					switch (action) {
+					case ORIGINAL:
+						value = ((Pair<Object,Object>)propertiesDifferent.get(key)).getLeft();
+						break;
+					case MODIFIED:
+						
+						break;
+					case EXCLUDE:
+						include = false;
+						break;
+					default:
+						break;
+					}
+				}
+				if (include) {
+					outputProperties.put(key, value);
+				}
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+		
+	}
+
+	private Action checkDifferentAction(Object key, Object modifiedValue, Object originalValue) throws IOException {
+		System.out.printf("Property %s has different values in original/modified file. Choose one: (E)xclude, (O)riginal value %s, (M)Modified value %s", key, originalValue, modifiedValue);
+		final List<Action> validActions = Arrays.asList(Action.EXCLUDE,Action.ORIGINAL, Action.MODIFIED);
+		return readAction(validActions);
+	}
+
+	private boolean checkIncludeNotIn(String originalOrModified, Object key, Object value) throws IOException {
+		System.out.printf("Property %s=%s not in %s file. Include? (y, n):", key, value, originalOrModified);
+		final List<Action> validActions = Arrays.asList(Action.YES, Action.NO);
+		Action action = readAction(validActions);
+		return Action.YES.equals(action);
+	}
+
+	private Action readAction(final List<Action> validActions) throws IOException {
+		BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+		Action action = null;
+		do {
+			action = Action.fromChar((char) br.read());
+		} while (action == null || !validActions.contains(action));
+		return action;
 	}
 
 	private Properties loadFile(File file) throws Exception {
@@ -136,6 +240,9 @@ public class PropertiesDiffAndMergeApp {
 				.argName("output file")
 				.required(false)
 				.desc("Output file in wich write merge results")
+				.build());
+		options.addOption(Option.builder("i")
+				.longOpt("interactive")
 				.build());
 		return options;
 	}
