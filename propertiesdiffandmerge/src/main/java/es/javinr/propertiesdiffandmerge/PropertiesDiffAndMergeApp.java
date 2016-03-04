@@ -231,9 +231,7 @@ public class PropertiesDiffAndMergeApp {
 			Object value = modifiedProperties.get(key);
 			boolean include = true;
 			try {
-				if (propertiesInOriginalNotInModified.containsKey(key)) {
-					include = checkIncludeNotIn("modified", key, value);
-				} else if (propertiesInModifiedNotInOriginal.containsKey(key)) {
+				if (propertiesInModifiedNotInOriginal.containsKey(key)) {
 					include = checkIncludeNotIn("original", key, value);
 				} else if (propertiesDifferent.containsKey(key)) {
 					Action action = checkDifferentAction(key, value, propertiesDifferent.get(key));
@@ -253,6 +251,19 @@ public class PropertiesDiffAndMergeApp {
 				}
 				if (include) {
 					outputProperties.put(key, value);
+				}
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+		for (Object originalKey : propertiesInOriginalNotInModified.keySet()) {
+			Object value = propertiesInOriginalNotInModified.get(originalKey);
+			boolean include = true;
+			try {
+				include = checkIncludeNotIn("modified", originalKey, value);
+				if (include) {
+					outputProperties.put(originalKey, value);
 				}
 			} catch (IOException e) {
 				// TODO Auto-generated catch block
