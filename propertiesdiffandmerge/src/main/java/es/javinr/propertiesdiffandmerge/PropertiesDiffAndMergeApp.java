@@ -4,16 +4,17 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.lang.reflect.Array;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
-import java.util.function.Consumer;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
@@ -21,10 +22,8 @@ import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
-import org.apache.commons.cli.ParseException;
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
-
-import es.javinr.propertiesdiffandmerge.PropertiesDiffAndMergeApp.Action;
 
 /**
  * Hello world!
@@ -81,7 +80,18 @@ public class PropertiesDiffAndMergeApp {
 	private File originalFile;
 	private File modifiedFile;
 	private boolean interactive = false;
-	
+	private boolean preserveOrder = false;
+	private String commentString = "#";
+	private String separatorChar = "=";
+	private List<String> order;
+	public boolean isPreserveOrder() {
+		return preserveOrder;
+	}
+
+	public void setPreserveOrder(boolean preserveOrder) {
+		this.preserveOrder = preserveOrder;
+	}
+
 	public boolean isInteractive() {
 		return interactive;
 	}
@@ -130,7 +140,7 @@ public class PropertiesDiffAndMergeApp {
 				app.setOutputFile(new File(commandLine.getOptionValue('o')));
 			}
 			app.setInteractive(commandLine.hasOption('i'));
-			
+			app.setPreserveOrder(commandLine.hasOption('p'));
 			System.out.println("Diffing " + originalFilePath + " and " + modifiedFile2Path);
 			app.run();
 		} catch (Exception e) {
@@ -140,7 +150,9 @@ public class PropertiesDiffAndMergeApp {
 	public void run() throws Exception {
 		Properties propertiesOriginal = loadFile(originalFile);
 		Properties propertiesModified = loadFile(modifiedFile);
-		
+		if (preserveOrder) {
+			order = loadOrder(modifiedFile);
+		}
 		Properties propertiesInOriginalNotInModified = diffPropertiesNotIn(propertiesOriginal, propertiesModified);
 		Properties propertiesInModifiedNotInOriginal = diffPropertiesNotIn(propertiesModified, propertiesOriginal);
 		Properties propertiesDifferent = diffProperties(propertiesOriginal, propertiesModified);
@@ -154,11 +166,62 @@ public class PropertiesDiffAndMergeApp {
 			} else {
 				outputProperties.putAll(propertiesModified);
 			}
-			try (FileWriter outputFileWriter = new FileWriter(getOutputFile())) {
-				outputProperties.store(outputFileWriter, null);
-			} catch (IOException e) {
-				throw new Exception("Error writing output file " + getOutputFile().getAbsolutePath(), e);
+			if (preserveOrder) {
+				outputWithOrder(outputProperties);
+			} else {
+				try (FileWriter outputFileWriter = new FileWriter(getOutputFile())) {
+					outputProperties.store(outputFileWriter, null);
+				} catch (IOException e) {
+					throw new Exception("Error writing output file " + getOutputFile().getAbsolutePath(), e);
+				}
 			}
+		}
+	}
+
+	private void outputWithOrder(Properties outputProperties) throws Exception {
+		try (FileWriter outputFileWriter = new FileWriter(getOutputFile())) {
+			if (order != null) {
+				for (Object key : order) {
+					outputFileWriter.write(key.toString());
+					outputFileWriter.write(separatorChar);
+					outputFileWriter.write(outputProperties.get(key).toString());
+					outputFileWriter.write(System.lineSeparator());
+				}
+				Set<Object> newKeys = outputProperties.keySet();
+				newKeys.removeAll(order);
+				for (Object newKey : newKeys) {
+					outputFileWriter.write(newKey.toString());
+					outputFileWriter.write(separatorChar);
+					outputFileWriter.write(outputProperties.get(newKey).toString());
+					outputFileWriter.write(System.lineSeparator());
+				}
+				outputFileWriter.flush();
+			}
+		} catch (IOException e) {
+			throw new Exception("Error writing output file " + getOutputFile().getAbsolutePath(), e);
+		}
+		
+	}
+
+	private List<String> loadOrder(File modifiedFile) throws Exception {
+		try (BufferedReader br = new BufferedReader(new FileReader(modifiedFile))) {
+			String line = null;
+			List<String> order = new LinkedList<String>();
+			while ((line = br.readLine()) != null) {
+				if (line.startsWith(commentString)) {
+					continue;
+				}
+				int pos = line.indexOf(separatorChar);
+				if (pos >= 0) {
+					String key = line.substring(0, pos).trim();
+					if (!StringUtils.isEmpty(key)) {
+						order.add(key);
+					}
+				}
+			}
+			return new ArrayList<String>(order);
+		} catch (IOException e) {
+			throw new Exception("Error reading order in " + modifiedFile, e);
 		}
 	}
 
@@ -246,6 +309,10 @@ public class PropertiesDiffAndMergeApp {
 				.build());
 		options.addOption(Option.builder("i")
 				.longOpt("interactive")
+				.build());	
+		options.addOption(Option.builder("p")
+				.longOpt("preserve-order")
+				.desc("Preserve order given in modified file")
 				.build());
 		return options;
 	}
