@@ -200,15 +200,18 @@ public class PropertiesDiffAndMergeApp {
 	}
 
 	private Action checkDifferentAction(Object key, Object modifiedValue, Object originalValue) throws IOException {
-		System.out.printf("Property %s has different values in original/modified file. Choose one: (E)xclude, (O)riginal value %s, (M)Modified value %s", key, originalValue, modifiedValue);
+		System.out.printf("Property %s has different values in original/modified file. Choose one: (E)xclude, (O)riginal value %s, (M)Modified value %s: ", key, originalValue, modifiedValue);
 		final List<Action> validActions = Arrays.asList(Action.EXCLUDE,Action.ORIGINAL, Action.MODIFIED);
-		return readAction(validActions);
+		Action action = readAction(validActions);
+		System.out.println();
+		return action;
 	}
 
 	private boolean checkIncludeNotIn(String originalOrModified, Object key, Object value) throws IOException {
 		System.out.printf("Property %s=%s not in %s file. Include? (y, n):", key, value, originalOrModified);
 		final List<Action> validActions = Arrays.asList(Action.YES, Action.NO);
 		Action action = readAction(validActions);
+		System.out.println();
 		return Action.YES.equals(action);
 	}
 
